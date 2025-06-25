@@ -208,7 +208,6 @@ const routes: Routes = [
             authorities: [Authority.USER],
             pageTitle: 'artemisApp.sharing.title',
         },
-        // canActivate: [UserRouteAccessService],
         loadComponent: () => import('./sharing/sharing.component').then((m) => m.SharingComponent),
     },
 ];

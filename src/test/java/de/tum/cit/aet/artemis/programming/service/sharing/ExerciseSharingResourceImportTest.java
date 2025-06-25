@@ -144,7 +144,7 @@ class ExerciseSharingResourceImportTest extends AbstractSpringIntegrationIndepen
     }
 
     @Test
-    void isSharingPlatformUp() throws Exception {
+    void shouldReturnTrueWhenSharingPlatformIsEnabled() throws Exception {
         MvcResult result = restMockMvc.perform(get("/api/core/sharing/" + SharingSupportResource.SHARINGCONFIG_RESOURCE_IS_ENABLED).contentType(MediaType.APPLICATION_JSON))
                 // .andDo(print())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON)).andExpect(status().isOk()).andReturn();
@@ -158,7 +158,7 @@ class ExerciseSharingResourceImportTest extends AbstractSpringIntegrationIndepen
      */
     @Test
     @WithMockUser(username = TEST_PREFIX + "instructor1", roles = "INSTRUCTOR")
-    void testImportBasket() throws Exception {
+    void shouldSuccessfullyImportBasketFromSharingPlatform() throws Exception {
         importBasket();
     }
 
@@ -168,7 +168,7 @@ class ExerciseSharingResourceImportTest extends AbstractSpringIntegrationIndepen
      */
     @Test
     @WithMockUser(username = TEST_PREFIX + "instructor1", roles = "INSTRUCTOR")
-    void testImportBasketFail() throws Exception {
+    void shouldReturnNotFoundWhenBasketImportFails() throws Exception {
         String sampleBasket = IOUtils.toString(Objects.requireNonNull(this.getClass().getResource("./basket/sampleBasket.json")), StandardCharsets.UTF_8);
 
         URI basketURI = new URI(SharingPlatformMockProvider.SHARING_BASEURL_PLUGIN + "/basket/" + SAMPLE_BASKET_TOKEN);
@@ -186,36 +186,13 @@ class ExerciseSharingResourceImportTest extends AbstractSpringIntegrationIndepen
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON)).andExpect(status().isNotFound());
     }
 
-    private String importBasket() throws Exception {
-        String sampleBasket = IOUtils.toString(Objects.requireNonNull(this.getClass().getResource("./basket/sampleBasket.json")), StandardCharsets.UTF_8);
-
-        URI basketURI = new URI(SharingPlatformMockProvider.SHARING_BASEURL_PLUGIN + "/basket/" + SAMPLE_BASKET_TOKEN);
-        MockRestServiceServer.MockRestServiceServerBuilder builder = MockRestServiceServer.bindTo(restTemplate);
-        builder.ignoreExpectOrder(true);
-        mockServer = builder.build();
-
-        final ResponseActions responseActions = mockServer.expect(ExpectedCount.once(), requestTo(basketURI)).andExpect(method(HttpMethod.GET));
-        responseActions.andRespond(MockRestResponseCreators.withSuccess(sampleBasket, MediaType.APPLICATION_JSON));
-
-        MvcResult result = restMockMvc
-                .perform(addCorrectChecksum(get("/api/programming/sharing/import/basket").queryParam("basketToken", SAMPLE_BASKET_TOKEN), "returnURL", TEST_RETURN_URL,
-                        "apiBaseURL", SharingPlatformMockProvider.SHARING_BASEURL_PLUGIN).contentType(MediaType.APPLICATION_JSON))
-                /* .andDo(print()) */
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON)).andExpect(status().isOk()).andReturn();
-        String content = result.getResponse().getContentAsString();
-
-        ShoppingBasket sb = objectMapper.readerFor(ShoppingBasket.class).readValue(content);
-        assertThat(sb.userInfo.email).isEqualTo("test.user@example.com");
-        return SAMPLE_BASKET_TOKEN;
-    }
-
     /**
      * tests the import of a basket from the sharing platform
      *
      */
     @Test
     @WithMockUser(username = TEST_PREFIX + "instructor1", roles = "INSTRUCTOR")
-    void importBasketNotFound() throws Exception {
+    void shouldReturnNotFoundWhenBasketDoesNotExist() throws Exception {
 
         URI basketURI = new URI(SharingPlatformMockProvider.SHARING_BASEURL_PLUGIN + "/basket/undefinedBasket.json");
         MockRestServiceServer.MockRestServiceServerBuilder builder = MockRestServiceServer.bindTo(restTemplate);
@@ -261,7 +238,7 @@ class ExerciseSharingResourceImportTest extends AbstractSpringIntegrationIndepen
      */
     @Test
     @WithMockUser(username = TEST_PREFIX + "instructor1", roles = "INSTRUCTOR")
-    void importBasketWrongChecksum() throws Exception {
+    void shouldReturnBadRequestWhenChecksumIsInvalid() throws Exception {
         restMockMvc.perform(get("/api/programming/sharing/import/basket").queryParam("basketToken", "sampleBasket.json").queryParam("returnURL", "http://testing/xyz1")
                 .queryParam("apiBaseURL", sharingConnectorService.getSharingApiBaseUrlOrNull().toString()).queryParam("checksum", "wrongChecksum")
                 .contentType(MediaType.APPLICATION_JSON)).andExpect(status().isBadRequest());
@@ -424,6 +401,29 @@ class ExerciseSharingResourceImportTest extends AbstractSpringIntegrationIndepen
 
         restMockMvc.perform(post("/api/programming/sharing/import/basket/problem-statement").contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(sharingInfo)).accept(MediaType.APPLICATION_JSON)).andExpect(status().isBadRequest());
+    }
+
+    private String importBasket() throws Exception {
+        String sampleBasket = IOUtils.toString(Objects.requireNonNull(this.getClass().getResource("./basket/sampleBasket.json")), StandardCharsets.UTF_8);
+
+        URI basketURI = new URI(SharingPlatformMockProvider.SHARING_BASEURL_PLUGIN + "/basket/" + SAMPLE_BASKET_TOKEN);
+        MockRestServiceServer.MockRestServiceServerBuilder builder = MockRestServiceServer.bindTo(restTemplate);
+        builder.ignoreExpectOrder(true);
+        mockServer = builder.build();
+
+        final ResponseActions responseActions = mockServer.expect(ExpectedCount.once(), requestTo(basketURI)).andExpect(method(HttpMethod.GET));
+        responseActions.andRespond(MockRestResponseCreators.withSuccess(sampleBasket, MediaType.APPLICATION_JSON));
+
+        MvcResult result = restMockMvc
+                .perform(addCorrectChecksum(get("/api/programming/sharing/import/basket").queryParam("basketToken", SAMPLE_BASKET_TOKEN), "returnURL", TEST_RETURN_URL,
+                        "apiBaseURL", SharingPlatformMockProvider.SHARING_BASEURL_PLUGIN).contentType(MediaType.APPLICATION_JSON))
+                /* .andDo(print()) */
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON)).andExpect(status().isOk()).andReturn();
+        String content = result.getResponse().getContentAsString();
+
+        ShoppingBasket sb = objectMapper.readerFor(ShoppingBasket.class).readValue(content);
+        assertThat(sb.userInfo.email).isEqualTo("test.user@example.com");
+        return SAMPLE_BASKET_TOKEN;
     }
 
 }

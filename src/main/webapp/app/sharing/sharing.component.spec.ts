@@ -68,8 +68,8 @@ describe('SharingComponent', () => {
     const testBasket: ShoppingBasket = { exerciseInfo: [], userInfo: { email: 'test@banana.com' }, tokenValidUntil: new Date(Date.now() + 60 * 60 * 1000) };
 
     const courses: Course[] = [
-        { id: 1, title: 'testCouse 1' },
-        { id: 2, title: 'testCouse 2' },
+        { id: 1, title: 'testCourse 1' },
+        { id: 2, title: 'testCourse 2' },
     ];
 
     it('loads baskets and courses, selects one, and navigates to import page', fakeAsync(() => {

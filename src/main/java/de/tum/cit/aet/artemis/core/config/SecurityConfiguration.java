@@ -248,7 +248,7 @@ public class SecurityConfiguration {
                     // Prometheus endpoint protected by IP address.
                     .requestMatchers("/management/prometheus/**").access((authentication, context) -> new AuthorizationDecision(monitoringIpAddresses.contains(context.getRequest().getRemoteAddr())));
 
-                    // LocalVCS related URLs: LocalVCPushFilter and LocalVCFetchFilter handle authentication on their own
+                    // LocalVC related URLs: LocalVCPushFilter and LocalVCFetchFilter handle authentication on their own
                     if (profileService.isLocalVCActive()) {
                         requests.requestMatchers("/git/**").permitAll();
                     }
