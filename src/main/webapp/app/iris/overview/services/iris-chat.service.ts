@@ -58,6 +58,7 @@ export class IrisChatService implements OnDestroy {
     stages: BehaviorSubject<IrisStageDTO[]> = new BehaviorSubject([]);
     suggestions: BehaviorSubject<string[]> = new BehaviorSubject([]);
     error: BehaviorSubject<IrisErrorMessageKey | undefined> = new BehaviorSubject(undefined);
+    chatSessions: BehaviorSubject<IrisSession[]> = new BehaviorSubject([]);
 
     rateLimitInfo?: IrisRateLimitInformation;
     rateLimitSubscription: Subscription;
@@ -66,6 +67,8 @@ export class IrisChatService implements OnDestroy {
     private sessionCreationIdentifier?: string;
 
     hasJustAcceptedExternalLLMUsage = false;
+
+    private courseId = 0;
 
     protected constructor() {
         this.rateLimitSubscription = this.status.currentRatelimitInfo().subscribe((info) => (this.rateLimitInfo = info));
@@ -80,9 +83,11 @@ export class IrisChatService implements OnDestroy {
         const requiresAcceptance = this.sessionCreationIdentifier
             ? this.modeRequiresLLMAcceptance.get(Object.values(ChatServiceMode).find((mode) => this.sessionCreationIdentifier?.includes(mode)) as ChatServiceMode)
             : true;
-
         if (requiresAcceptance === false || this.accountService.userIdentity?.externalLLMUsageAccepted || this.hasJustAcceptedExternalLLMUsage) {
-            this.getCurrentSessionOrCreate().subscribe(this.handleNewSession());
+            this.getCurrentSessionOrCreate().subscribe({
+                ...this.handleNewSession(),
+                complete: () => this.loadChatSessions(),
+            });
         }
     }
 
@@ -243,7 +248,10 @@ export class IrisChatService implements OnDestroy {
 
     public clearChat(): void {
         this.close();
-        this.createNewSession().subscribe(this.handleNewSession());
+        this.createNewSession().subscribe({
+            ...this.handleNewSession(),
+            complete: () => this.loadChatSessions(),
+        });
     }
 
     private handleWebsocketMessage(payload: IrisChatWebsocketDTO) {
@@ -304,6 +312,12 @@ export class IrisChatService implements OnDestroy {
         );
     }
 
+    private loadChatSessions() {
+        this.http.getChatSessions(this.courseId).subscribe((sessions: IrisSession[]) => {
+            this.chatSessions.next(sessions ?? []);
+        });
+    }
+
     /**
      * Creates a new session
      */
@@ -332,11 +346,29 @@ export class IrisChatService implements OnDestroy {
         }
     }
 
+    switchToSession(session: IrisSession): void {
+        if (this.sessionId === session.id) {
+            return;
+        }
+
+        this.close();
+
+        const requiresAcceptance = this.sessionCreationIdentifier ? this.modeRequiresLLMAcceptance.get(session.chatMode) : true;
+
+        if (requiresAcceptance === false || this.accountService.userIdentity?.externalLLMUsageAccepted || this.hasJustAcceptedExternalLLMUsage) {
+            this.http.getChatSessionById(this.courseId, session.id, session.chatMode).subscribe((session) => this.handleNewSession().next(session));
+        }
+    }
+
     private closeAndStart() {
         this.close();
         if (this.sessionCreationIdentifier) {
             this.start();
         }
+    }
+
+    public currentSessionId(): Observable<number | undefined> {
+        return this.sessionId$;
     }
 
     public currentMessages(): Observable<IrisMessage[]> {
@@ -351,11 +383,19 @@ export class IrisChatService implements OnDestroy {
         return this.error.asObservable();
     }
 
+    public setCourseId(courseId: number): void {
+        this.courseId = courseId;
+    }
+
     public currentNumNewMessages(): Observable<number> {
         return this.numNewMessages.asObservable();
     }
 
     public currentSuggestions(): Observable<string[]> {
         return this.suggestions.asObservable();
+    }
+
+    public availableChatSessions(): Observable<IrisSession[]> {
+        return this.chatSessions.asObservable();
     }
 }

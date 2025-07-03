@@ -1,4 +1,18 @@
-import { faArrowDown, faCircle, faCircleInfo, faCompress, faExpand, faPaperPlane, faRedo, faThumbsDown, faThumbsUp, faTrash, faXmark } from '@fortawesome/free-solid-svg-icons';
+import {
+    faArrowDown,
+    faChevronRight,
+    faCircle,
+    faCircleInfo,
+    faCompress,
+    faExpand,
+    faPaperPlane,
+    faPenToSquare,
+    faRedo,
+    faThumbsDown,
+    faThumbsUp,
+    faTrash,
+    faXmark,
+} from '@fortawesome/free-solid-svg-icons';
 import { NgbModal, NgbTooltip } from '@ng-bootstrap/ng-bootstrap';
 import { AfterViewInit, Component, ElementRef, EventEmitter, Input, OnDestroy, OnInit, Output, ViewChild, inject, input } from '@angular/core';
 import { IrisAssistantMessage, IrisMessage, IrisSender } from 'app/iris/shared/entities/iris-message.model';
@@ -26,6 +40,11 @@ import { ArtemisTranslatePipe } from 'app/shared/pipes/artemis-translate.pipe';
 import { AsPipe } from 'app/shared/pipes/as.pipe';
 import { HtmlForMarkdownPipe } from 'app/shared/pipes/html-for-markdown.pipe';
 import { ActivatedRoute } from '@angular/router';
+import { ChatHistoryItemComponent } from './chat-history-item/chat-history-item.component';
+import { IrisSession } from 'app/iris/shared/entities/iris-session.model';
+import { NgClass } from '@angular/common';
+import { facSidebar } from 'app/shared/icons/icons';
+import { User } from 'app/core/user/user.model';
 
 @Component({
     selector: 'jhi-iris-base-chatbot',
@@ -93,6 +112,8 @@ import { ActivatedRoute } from '@angular/router';
         ArtemisTranslatePipe,
         AsPipe,
         HtmlForMarkdownPipe,
+        ChatHistoryItemComponent,
+        NgClass,
     ],
 })
 export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewInit {
@@ -115,8 +136,12 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
     faThumbsUp = faThumbsUp;
     faThumbsDown = faThumbsDown;
     faRedo = faRedo;
+    faPenToSquare = faPenToSquare;
+    faChevronRight = faChevronRight;
+    facSidebar = facSidebar;
 
     // State variables
+    sessionIdSubscription: Subscription;
     messagesSubscription: Subscription;
     stagesSubscription: Subscription;
     errorSubscription: Subscription;
@@ -125,7 +150,10 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
     activeStatusSubscription: Subscription;
     suggestionsSubscription: Subscription;
     routeSubscription: Subscription;
+    chatSessionsSubscription: Subscription;
 
+    currentSessionId: number | undefined;
+    chatSessions: IrisSession[] = [];
     messages: IrisMessage[] = [];
     stages?: IrisStageDTO[] = [];
     suggestions?: string[] = [];
@@ -139,7 +167,10 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
     shouldAnimate = false;
     hasActiveStage = false;
 
+    isChatHistoryOpen = true;
+
     // User preferences
+    user: User | undefined;
     userAccepted: boolean;
     isScrolledToBottom = true;
     rows = 1;
@@ -147,9 +178,11 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
     public ButtonType = ButtonType;
 
     showDeclineButton = input<boolean>(true);
+    isChatHistoryAvailable = input<boolean>(false);
     @Input() fullSize: boolean | undefined;
     @Input() showCloseButton = false;
     @Input() isChatGptWrapper = false;
+    @Input() showChatSessions: boolean = false;
     @Output() fullSizeToggle = new EventEmitter<void>();
     @Output() closeClicked = new EventEmitter<void>();
 
@@ -173,6 +206,9 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
                 this.newMessageTextContent = params.irisQuestion;
             }
         });
+        this.sessionIdSubscription = this.chatService.currentSessionId().subscribe((sessionId) => {
+            this.currentSessionId = sessionId;
+        });
         this.messagesSubscription = this.chatService.currentMessages().subscribe((messages) => {
             if (messages.length !== this.messages?.length) {
                 this.scrollToBottom('auto');
@@ -188,6 +224,9 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
                     cnt.textContent = cnt.textContent.replace(/\n/g, '\n\n');
                 }
             });
+        });
+        this.chatSessionsSubscription = this.chatService.availableChatSessions().subscribe((sessions) => {
+            this.chatSessions = sessions;
         });
         this.stagesSubscription = this.chatService.currentStages().subscribe((stages) => {
             this.stages = stages;
@@ -242,6 +281,7 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
         this.activeStatusSubscription.unsubscribe();
         this.suggestionsSubscription.unsubscribe();
         this.routeSubscription?.unsubscribe();
+        this.chatSessionsSubscription.unsubscribe();
     }
 
     checkIfUserAcceptedExternalLLMUsage(): void {
@@ -306,8 +346,8 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
      */
     scrollToBottom(behavior: ScrollBehavior) {
         setTimeout(() => {
-            const messagesElement: HTMLElement = this.messagesElement.nativeElement;
-            messagesElement.scrollTo({
+            const messagesElement: HTMLElement = this.messagesElement?.nativeElement;
+            messagesElement?.scrollTo({
                 top: 0,
                 behavior: behavior,
             });
@@ -447,5 +487,60 @@ export class IrisBaseChatbotComponent implements OnInit, OnDestroy, AfterViewIni
     onSuggestionClick(suggestion: string) {
         this.newMessageTextContent = suggestion;
         this.onSend();
+    }
+
+    onSessionClick(session: IrisSession) {
+        this.chatService.switchToSession(session);
+    }
+
+    setChatHistoryVisibility(isOpen: boolean) {
+        this.isChatHistoryOpen = isOpen;
+    }
+
+    /**
+     * Retrieves chat sessions that occurred between a specified range of days ago.
+     * @param daysAgoNewer The newer boundary of the range, in days ago (e.g., 0 for today, 1 for yesterday).
+     * @param daysAgoOlder The older boundary of the range, in days ago (e.g., 0 for today, 7 for 7 days ago).
+     *                     Must be greater than or equal to daysAgoNewer if ignoreOlderBoundary is false.
+     * @param ignoreOlderBoundary If true, only the daysAgoNewer boundary is considered (sessions newer than or on this day).
+     * @returns An array of IrisSession objects matching the criteria.
+     */
+    getSessionsBetween(daysAgoNewer: number, daysAgoOlder?: number, ignoreOlderBoundary = false): IrisSession[] {
+        if (daysAgoNewer < 0 || (!ignoreOlderBoundary && (daysAgoOlder === undefined || daysAgoOlder < 0 || daysAgoNewer > daysAgoOlder))) {
+            return [];
+        }
+
+        const today = new Date();
+        const rangeEndDate = new Date(today);
+        rangeEndDate.setDate(today.getDate() - daysAgoNewer);
+        rangeEndDate.setHours(23, 59, 59, 999); // Set to the end of the 'daysAgoNewer' day
+
+        let rangeStartDate: Date | null = null;
+        if (!ignoreOlderBoundary && daysAgoOlder !== undefined) {
+            rangeStartDate = new Date(today);
+            rangeStartDate.setDate(today.getDate() - daysAgoOlder);
+            rangeStartDate.setHours(0, 0, 0, 0); // Set to the start of the 'daysAgoOlder' day
+        }
+
+        return this.chatSessions
+            .filter((session) => {
+                const sessionCreationDate = new Date(session.creationDate);
+
+                const isAfterOrOnStartDate = ignoreOlderBoundary || (rangeStartDate && sessionCreationDate.getTime() >= rangeStartDate.getTime());
+                const isBeforeOrOnEndDate = sessionCreationDate.getTime() <= rangeEndDate.getTime();
+
+                if (ignoreOlderBoundary) {
+                    return isBeforeOrOnEndDate;
+                } else {
+                    return isAfterOrOnStartDate && isBeforeOrOnEndDate;
+                }
+            })
+            .toSorted((a, b) => {
+                return new Date(b.creationDate).getTime() - new Date(a.creationDate).getTime();
+            });
+    }
+
+    openNewSession() {
+        this.chatService.clearChat();
     }
 }
